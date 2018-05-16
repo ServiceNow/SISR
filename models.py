@@ -10,6 +10,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+class PaddedConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, k, stride, padding):
+        super(PaddedConv2d, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, k, stride=stride)
+        self.padding = padding
+
+    def forward(self, x):
+        x = F.pad(x, (self.padding,self.padding,self.padding,self.padding), mode='replicate')
+        x = self.conv(x)
+        return x
+
 def swish(x):
     return x * F.sigmoid(x)
 
@@ -26,9 +37,10 @@ class residualBlock(nn.Module):
     def __init__(self, in_channels=64, k=3, n=64, s=1):
         super(residualBlock, self).__init__()
 
-        self.conv1 = nn.Conv2d(in_channels, n, k, stride=s, padding=1)
+        self.conv1 = PaddedConv2d(in_channels, n, k, stride=s, padding=1)
+        # nn.Conv2d(in_channels, n, k, stride=s, padding=1)
         self.bn1 = nn.BatchNorm2d(n)
-        self.conv2 = nn.Conv2d(n, n, k, stride=s, padding=1)
+        self.conv2 = PaddedConv2d(n, n, k, stride=s, padding=1)
         self.bn2 = nn.BatchNorm2d(n)
 
     def forward(self, x):
@@ -39,7 +51,7 @@ class upsampleBlock(nn.Module):
     # Implements resize-convolution
     def __init__(self, in_channels, out_channels):
         super(upsampleBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, 3, stride=1, padding=1)
+        self.conv = PaddedConv2d(in_channels, out_channels, 3, stride=1, padding=1)
         self.shuffler = nn.PixelShuffle(2)
 
     def forward(self, x):
@@ -51,20 +63,24 @@ class Generator(nn.Module):
         self.n_residual_blocks = n_residual_blocks
         self.upsample_factor = upsample_factor
 
-        self.conv1 = nn.Conv2d(3, 64, 9, stride=1, padding=4)
+        self.conv1 = PaddedConv2d(3, 64, 9, stride=1, padding=4)
+        # self.conv1 = PaddedConv2d(3, 64, 9, stride=1)
 
         for i in range(self.n_residual_blocks):
             self.add_module('residual_block' + str(i+1), residualBlock())
 
-        self.conv2 = nn.Conv2d(64, 64, 3, stride=1, padding=1)
+        self.conv2 = PaddedConv2d(64, 64, 3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
 
         for i in range(self.upsample_factor/2):
             self.add_module('upsample' + str(i+1), upsampleBlock(64, 256))
 
-        self.conv3 = nn.Conv2d(64, 3, 9, stride=1, padding=4)
+        self.conv3 = PaddedConv2d(64, 3, 9, stride=1, padding=4)
 
     def forward(self, x):
+        print (x[0])
+        # x = F.pad(x, (4,4,4,4), mode='replicate')
+        # x = F.pad(x, (4,4,4,4), mode='constant', value=1)
         x = swish(self.conv1(x))
 
         y = x.clone()
@@ -81,25 +97,25 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, 3, stride=1, padding=1)
+        self.conv1 = PaddedConv2d(3, 64, 3, stride=1, padding=1)
 
-        self.conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1)
+        self.conv2 = PaddedConv2d(64, 64, 3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 128, 3, stride=1, padding=1)
+        self.conv3 = PaddedConv2d(64, 128, 3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(128, 128, 3, stride=2, padding=1)
+        self.conv4 = PaddedConv2d(128, 128, 3, stride=2, padding=1)
         self.bn4 = nn.BatchNorm2d(128)
-        self.conv5 = nn.Conv2d(128, 256, 3, stride=1, padding=1)
+        self.conv5 = PaddedConv2d(128, 256, 3, stride=1, padding=1)
         self.bn5 = nn.BatchNorm2d(256)
-        self.conv6 = nn.Conv2d(256, 256, 3, stride=2, padding=1)
+        self.conv6 = PaddedConv2d(256, 256, 3, stride=2, padding=1)
         self.bn6 = nn.BatchNorm2d(256)
-        self.conv7 = nn.Conv2d(256, 512, 3, stride=1, padding=1)
+        self.conv7 = PaddedConv2d(256, 512, 3, stride=1, padding=1)
         self.bn7 = nn.BatchNorm2d(512)
-        self.conv8 = nn.Conv2d(512, 512, 3, stride=2, padding=1)
+        self.conv8 = PaddedConv2d(512, 512, 3, stride=2, padding=1)
         self.bn8 = nn.BatchNorm2d(512)
 
         # Replaced original paper FC layers with FCN
-        self.conv9 = nn.Conv2d(512, 1, 1, stride=1, padding=1)
+        self.conv9 = PaddedConv2d(512, 1, 1, stride=1, padding=1)
 
     def forward(self, x):
         x = swish(self.conv1(x))
